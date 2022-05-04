@@ -48,7 +48,9 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    // std::cout << "BlockCount: " << blockCount << "\nSetCount: " << setCount << std::endl;
+    std::cout << "BlockCount: " << blockCount << "\nSetCount: " << setCount << std::endl << std::endl;
+    std::cout << "No    Status ByteAddr      BlockAddr     Index    Tag" << std::endl;
+    std::cout << "-------------------------------------------------------------" << std::endl;
 
     // Allocate memory space for the cache
     auto *cache = new CacheBlock[blockCount];
@@ -77,6 +79,7 @@ int main(int argc, char **argv) {
             int index = getCacheBlockIndex(setIndex, i, setDegree);
             if (cache[index].valid && cache[index].tag == tag) { // Hit
                 std::cout << std::setw(5) << counter + 1 << " [Hit!] ";
+                cache[index].time = counter; // Update the timer (LRU)
                 hit = true;
                 hitCounter++;
                 break;
