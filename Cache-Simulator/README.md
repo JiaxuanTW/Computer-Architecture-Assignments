@@ -2,7 +2,7 @@
 
 ## Arguments
 ```
-Cache.exe trace_file cache_size  block_size  set_degree
+Cache.exe trace_file cache_size block_size set_degree
 ```
 * *trace_file*:  Relative path to the byte-address trace file.
 * *cache_size*:  Size of the cache in KBytes.
