@@ -1,5 +1,27 @@
 # Tomasulo Algorithm Simulator
 
+## Constants
+Can be changed in `#define` area and `Tomasulo()` constructor function
+
+#### Reservation Stations
+* 3 Adder RSs
+* 2 Multiplier RSs
+* 2 Load Buffers
+* 2 Store Buffers
+
+#### Instructions
+* L.D - 2 cycles
+* S.D - 1 cycle
+* ADD.D - 2 cycles
+* SUB.D - 2 cycles
+* MUL.D - 10 cycles
+* DIV.D - 40 cycles
+
+#### Registers and Memory
+* 32 Integer Registers (R0, R1, ... , R31) - default value = 0, except R1 = 16
+* 16 Floating-point Registers (R0, R2, ... , R30) - default value = 1.0
+* 8 Double-pecision-space Memory (Total 64KB) - default value = 1.0
+
 ## Arguments
 ```
 Tomasulo.exe input_file
