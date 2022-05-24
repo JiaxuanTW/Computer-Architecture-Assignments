@@ -77,7 +77,7 @@ public:
 
     void printCurrentInstructionStatus() {
         std::cout << "+-----------------------------------------+" << std::endl;
-        std::cout << std::left << "| " << std::setw(22) << "Instruction"
+        std::cout << std::left << "| " << std::setw(22) << "Instructions"
                   << std::setw(6) << "Issue"
                   << std::setw(6) << "ExecC"
                   << std::setw(6) << "Write" << "|" << std::endl;
@@ -92,15 +92,15 @@ public:
                 std::cout << std::setw(5) << "F" + std::to_string(i.rs) + ",";
                 std::cout << std::setw(5) << "F" + std::to_string(i.rt);
             }
-            std::cout << std::setw(6) << i.issue;
-            std::cout << std::setw(6) << i.execComp;
-            std::cout << std::setw(6) << i.writeResult << "|" << std::endl;
+            std::cout << std::setw(6) << (i.issue > 0 ? std::to_string(i.issue) : "");
+            std::cout << std::setw(6) << (i.execComp > 0 ? std::to_string(i.execComp) : "");
+            std::cout << std::setw(6) << (i.writeResult > 0 ? std::to_string(i.writeResult) : "") << "|" << std::endl;
         }
         std::cout << "+-----------------------------------------+" << std::endl;
     }
 
     void printReservationStations() {
-        std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+" << std::endl;
+        std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+--------+" << std::endl;
         std::cout << std::left << std::setw(9) << "| Name";
         std::cout << std::setw(9) << "| Busy";
         std::cout << std::setw(9) << "| Op";
@@ -108,22 +108,26 @@ public:
         std::cout << std::setw(9) << "| Vk";
         std::cout << std::setw(9) << "| Qj";
         std::cout << std::setw(9) << "| Qk";
+        std::cout << std::setw(9) << "| A";
         std::cout << std::setw(9) << "| Time   |" << std::endl;
-        std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+" << std::endl;
+        std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+--------+" << std::endl;
         for (auto &i: RS) {
             std::cout << "| " << std::left << std::setw(7) << i.id.toString();
-            std::cout << "| " << std::setw(7) << i.busy;
+            std::cout << "| " << std::setw(7) << (i.busy ? "Yes" : "No");
             if (i.busy) {
                 std::cout << "| " << std::setw(7) << instructions[i.instructionIndex].operation;
-                std::cout << "| " << std::setw(7) << i.Vj;
-                std::cout << "| " << std::setw(7) << i.Vk;
+                i.Qj.empty() ? std::cout << "| " << std::setw(7) << i.Vj : std::cout << "| " << std::setw(7) << "";
+                i.Qk.empty() ? std::cout << "| " << std::setw(7) << i.Vk : std::cout << "| " << std::setw(7) << "";
                 std::cout << "| " << std::setw(7) << i.Qj.toString();
                 std::cout << "| " << std::setw(7) << i.Qk.toString();
+                (i.id.type == ReservationStationID::LOAD || i.id.type == ReservationStationID::STORE) ?
+                std::cout << "| " << std::setw(7) << i.addr : std::cout << "| " << std::setw(7) << "";
                 std::cout << "| " << std::setw(7) << i.cyclesRemaining << "|" << std::endl;
             } else {
-                std::cout << "|        |        |        |        |        |        |" << std::endl;
+                std::cout << "|        |        |        |        |        |        |        |" << std::endl;
             }
-            std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+" << std::endl;
+            std::cout << "+--------+--------+--------+--------+--------+--------+--------+--------+--------+"
+                      << std::endl;
         }
     }
 
@@ -148,6 +152,33 @@ public:
             std::cout << "+--------";
         }
         std::cout << "+" << std::endl;
+    }
+
+    void writeCurrentCycleOutputToFile(const std::string &filepath) {
+        std::fstream file;
+
+        if (clockCycle == 1) {
+            file.open(filepath, std::ios::out | std::ios::trunc);
+        } else {
+            file.open(filepath, std::ios::out | std::ios::app);
+        }
+
+        if (!file.is_open()) {
+            std::cerr << "Failed to write output to file!" << std::endl;
+            exit(1);
+        }
+
+        std::streambuf *coutbuf = std::cout.rdbuf();
+        std::cout.rdbuf(file.rdbuf());
+
+        std::cout << "Clock Cycle: " << getCurrentClockCycle() << std::endl;
+        printCurrentInstructionStatus();
+        printReservationStations();
+        printFloatingPointRegisters();
+        std::cout << std::endl;
+
+        std::cout.rdbuf(coutbuf); // Reset to standard output
+        file.close();
     }
 
     void loadInstructionsFromFile(const std::string &filepath) {
@@ -185,6 +216,7 @@ public:
             }
             instructions.push_back(instruction);
         }
+        file.close();
     }
 
 private:
@@ -365,20 +397,33 @@ private:
     }
 
     void execute() {
-        for (auto &i: RS) {
-            if (i.busy && i.Qj.empty() && i.Qk.empty() && i.cyclesRemaining > 0) {
-                if (i.lastUsedCycle == clockCycle && instructions[i.instructionIndex].operation != "S.D") {
-                    continue;
+        for (auto &r: RS) {
+            if (r.id.type == ReservationStationID::LOAD || r.id.type == ReservationStationID::STORE) {
+                // For load/store operation, execute when RS[r].Oj = 0
+                if (r.busy && r.Qj.empty() && r.cyclesRemaining > 0) {
+                    if (r.cyclesRemaining == 1) {
+                        r.addr += (int) r.Vj;
+                        instructions[r.instructionIndex].execComp = clockCycle;
+                    }
+                    r.cyclesRemaining--;
                 }
-                // Record the clock cycle when EXECUTE stage of the instruction is complete
-                if (i.cyclesRemaining == 1) {
-                    instructions[i.instructionIndex].execComp = clockCycle;
+            } else {
+                // For other operations, execute when RS[r].Qj = 0 and RS[r].Qk = 0
+                if (r.busy && r.Qj.empty() && r.Qk.empty() && r.cyclesRemaining > 0) {
+                    if (r.lastUsedCycle == clockCycle && instructions[r.instructionIndex].operation != "S.D") {
+                        continue;
+                    }
+                    // Record the clock cycle when EXECUTE stage of the instruction is complete
+                    if (r.cyclesRemaining == 1) {
+                        instructions[r.instructionIndex].execComp = clockCycle;
+                    }
+                    // S.D operation execute right after being issued but wait util the needed value is ready
+//                    if (instructions[r.instructionIndex].operation == "S.D") {
+//                        instructions[r.instructionIndex].execComp =
+//                                instructions[r.instructionIndex].issue + CYCLE_OF_STORE;
+//                    }
+                    r.cyclesRemaining--;
                 }
-                // S.D operation execute right after being issued but wait util the needed value is ready
-                if (instructions[i.instructionIndex].operation == "S.D") {
-                    instructions[i.instructionIndex].execComp = instructions[i.instructionIndex].issue + CYCLE_OF_STORE;
-                }
-                i.cyclesRemaining--;
             }
         }
     }
@@ -387,6 +432,10 @@ private:
         for (auto &r: RS) {
             // When the execution of an instruction is complete
             if (r.busy && r.cyclesRemaining == 0) {
+                // Store operations needs wait until RS[r].Qk = 0
+                if (r.id.type == ReservationStationID::STORE && !r.Qk.empty() && r.) {
+                    continue;
+                }
                 // Record the clock cycle of WRITE-RESULT stage of the instruction
                 instructions[r.instructionIndex].writeResult = clockCycle;
                 r.busy = false;
@@ -406,9 +455,9 @@ private:
                 } else if (instructions[r.instructionIndex].operation == "DIV.D") {
                     result = r.Vj / r.Vk; // TODO: Remainder!
                 } else if (instructions[r.instructionIndex].operation == "L.D") {
-                    result = MEM[(int) (r.Vj + r.addr) / 8];
+                    result = MEM[r.addr / 8];
                 } else if (instructions[r.instructionIndex].operation == "S.D") {
-                    MEM[(int) (r.Vj + r.addr) / 8] = r.Vk;
+                    MEM[r.addr / 8] = r.Vk;
                     return;
                 }
 
@@ -509,14 +558,9 @@ int main(int argc, char **argv) {
     // Run until all the results are written
     while (tomasulo.hasRemainingInstruction()) {
         tomasulo.runNextCycle();
-
-        system("cls");
-        std::cout << "Clock Cycle: " << tomasulo.getCurrentClockCycle() << std::endl;
-        tomasulo.printCurrentInstructionStatus();
-        tomasulo.printReservationStations();
-        tomasulo.printFloatingPointRegisters();
-        system("pause");
+        tomasulo.writeCurrentCycleOutputToFile("output.txt");
     }
+    tomasulo.printCurrentInstructionStatus();
 
     return 0;
 }
