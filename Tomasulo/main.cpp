@@ -366,7 +366,6 @@ private:
             // We assume the value must be in the register
             RS[r].Vj = R[instruction->rs];
             RS[r].Qj.clear();
-            RS[r].Qk.clear(); // It's redundant in the algorithm but were added in this implementation
 
             registerStat[instruction->rt].Qi = rsId;
         } else if (instruction->operation == "S.D") {
@@ -399,10 +398,15 @@ private:
     void execute() {
         for (auto &r: RS) {
             if (r.id.type == ReservationStationID::LOAD || r.id.type == ReservationStationID::STORE) {
-                // For load/store operation, execute when RS[r].Oj = 0
+                // For Load and Store operations, execute when RS[r].Oj = 0
                 if (r.busy && r.Qj.empty() && r.cyclesRemaining > 0) {
+                    if (r.lastUsedCycle == clockCycle) {
+                        continue;
+                    }
                     if (r.cyclesRemaining == 1) {
+                        // Add offset to address
                         r.addr += (int) r.Vj;
+                        // Record the clock cycle when EXECUTE stage of the instruction is complete
                         instructions[r.instructionIndex].execComp = clockCycle;
                     }
                     r.cyclesRemaining--;
@@ -410,18 +414,13 @@ private:
             } else {
                 // For other operations, execute when RS[r].Qj = 0 and RS[r].Qk = 0
                 if (r.busy && r.Qj.empty() && r.Qk.empty() && r.cyclesRemaining > 0) {
-                    if (r.lastUsedCycle == clockCycle && instructions[r.instructionIndex].operation != "S.D") {
+                    if (r.lastUsedCycle == clockCycle) {
                         continue;
                     }
-                    // Record the clock cycle when EXECUTE stage of the instruction is complete
                     if (r.cyclesRemaining == 1) {
+                        // Record the clock cycle when EXECUTE stage of the instruction is complete
                         instructions[r.instructionIndex].execComp = clockCycle;
                     }
-                    // S.D operation execute right after being issued but wait util the needed value is ready
-//                    if (instructions[r.instructionIndex].operation == "S.D") {
-//                        instructions[r.instructionIndex].execComp =
-//                                instructions[r.instructionIndex].issue + CYCLE_OF_STORE;
-//                    }
                     r.cyclesRemaining--;
                 }
             }
@@ -432,10 +431,13 @@ private:
         for (auto &r: RS) {
             // When the execution of an instruction is complete
             if (r.busy && r.cyclesRemaining == 0) {
-                // Store operations needs wait until RS[r].Qk = 0
-                if (r.id.type == ReservationStationID::STORE && !r.Qk.empty() && r.) {
+                // Store operations need to wait until RS[r].Qk = 0
+                // And r.lastUsedCycle cannot be the current cycle because if an RS which the store buffer is waiting for
+                // finished writeResult stage, the store buffer must wait util the next cycle to write that result in memory
+                if (r.id.type == ReservationStationID::STORE && (!r.Qk.empty() || r.lastUsedCycle == clockCycle)) {
                     continue;
                 }
+
                 // Record the clock cycle of WRITE-RESULT stage of the instruction
                 instructions[r.instructionIndex].writeResult = clockCycle;
                 r.busy = false;
@@ -496,7 +498,7 @@ private:
 
     ReservationStationID findEmptyAdderRS() {
         for (int i = 0; i < NUM_OF_ADDER_RS; i++) {
-            if (RS[i].lastUsedCycle == clockCycle && instructions[RS[i].instructionIndex].operation != "S.D") {
+            if (RS[i].lastUsedCycle == clockCycle) {
                 continue;
             }
             if (!RS[i].busy) {
@@ -508,7 +510,7 @@ private:
 
     ReservationStationID findEmptyMultiplierRS() {
         for (int i = NUM_OF_ADDER_RS; i < NUM_OF_ADDER_RS + NUM_OF_MULTIPLIER_RS; i++) {
-            if (RS[i].lastUsedCycle == clockCycle && instructions[RS[i].instructionIndex].operation != "S.D") {
+            if (RS[i].lastUsedCycle == clockCycle) {
                 continue;
             }
             if (!RS[i].busy) {
@@ -521,7 +523,7 @@ private:
     ReservationStationID findEmptyLoadBufferRS() {
         for (int i = NUM_OF_ADDER_RS + NUM_OF_MULTIPLIER_RS;
              i < NUM_OF_ADDER_RS + NUM_OF_MULTIPLIER_RS + NUM_OF_LOAD_BUFFER; i++) {
-            if (RS[i].lastUsedCycle == clockCycle && instructions[RS[i].instructionIndex].operation != "S.D") {
+            if (RS[i].lastUsedCycle == clockCycle) {
                 continue;
             }
             if (!RS[i].busy) {
@@ -534,7 +536,7 @@ private:
     ReservationStationID findEmptyStoreBufferRS() {
         for (int i = NUM_OF_ADDER_RS + NUM_OF_MULTIPLIER_RS + NUM_OF_LOAD_BUFFER;
              i < NUM_OF_ADDER_RS + NUM_OF_MULTIPLIER_RS + NUM_OF_LOAD_BUFFER + NUM_OF_STORE_BUFFER; i++) {
-            if (RS[i].lastUsedCycle == clockCycle && instructions[RS[i].instructionIndex].operation != "S.D") {
+            if (RS[i].lastUsedCycle == clockCycle) {
                 continue;
             }
             if (!RS[i].busy) {
