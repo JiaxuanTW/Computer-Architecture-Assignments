@@ -438,12 +438,29 @@ private:
                     continue;
                 }
 
+                // The load and store operations require in-order write-result
+                if (r.id.type == ReservationStationID::LOAD || r.id.type == ReservationStationID::STORE) {
+                    // Loop over instructions before this load-store command
+                    // to see if any load-store is unfinished (writeResult = 0)
+                    bool hasUnfinished = false;
+                    for (int i = r.instructionIndex - 1; i >= 0; i--) {
+                        if ((instructions[i].operation == "L.D" || instructions[i].operation == "S.D") &&
+                            instructions[i].writeResult == 0) {
+                            hasUnfinished = true;
+                        }
+                    }
+
+                    if (hasUnfinished) {
+                        continue;
+                    }
+                }
+
                 // Record the clock cycle of WRITE-RESULT stage of the instruction
                 instructions[r.instructionIndex].writeResult = clockCycle;
                 r.busy = false;
 
                 // It's updated because if an instruction wants to use this RS must wait one cycle
-                // And will prevent problem is ISSUE stage
+                // And will prevent problems in ISSUE stage
                 r.lastUsedCycle = clockCycle;
 
                 // Calculate the result
